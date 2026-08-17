@@ -1,0 +1,190 @@
+# EcoTrack — Reglas de proyecto para Vibe Coding
+
+EcoTrack es un MVP web que permite a los usuarios registrar actividades diarias mediante lenguaje natural (ej.: "Hoy comí carne y viajé 20 km en bus") para estimar su huella de carbono.
+
+El agente actúa como copiloto y ejecutor: el desarrollador define la intención y el producto; el agente implementa la solución.
+
+---
+
+## Stack tecnológico
+
+Preferencia: **Next.js**, **React**, **TypeScript**.
+
+Si el proyecto ya usa otra tecnología, **no reemplazarla automáticamente**. Analizar la estructura existente y respetar las decisiones tomadas.
+
+---
+
+## Alcance (MVP)
+
+EcoTrack es un MVP. Priorizar:
+
+- Simplicidad y velocidad de desarrollo
+- Claridad y experiencia de usuario
+- Código mantenible
+
+**No sobrearquitecturar** ni implementar funcionalidades futuras no solicitadas.
+
+**No inventar** datos, APIs, servicios externos o funcionalidades que no hayan sido pedidas explícitamente.
+
+---
+
+## Vibe Coding — Modo de trabajo
+
+1. **Comprender primero** el objetivo antes de cambiar código.
+2. **Revisar** la estructura y convenciones existentes del proyecto.
+3. **Modificar solo** los archivos necesarios para cumplir la tarea.
+4. **Preservar** las funcionalidades existentes al introducir cambios.
+
+Ante errores:
+
+- Analizar la causa raíz antes de corregir.
+- Explicar brevemente el problema.
+- Aplicar la corrección de forma directa.
+- Evitar parches improvisados o soluciones frágiles.
+- **No pedir al desarrollador** que corrija errores de sintaxis que el agente puede resolver.
+
+---
+
+## Arquitectura
+
+Mantener una arquitectura **modular** y evolutiva:
+
+```
+src/
+  components/     → UI pura, sin lógica de negocio
+  features/       → flujos de usuario (opcional, si el proyecto crece)
+  services/       → interpretación, APIs, orquestación
+  lib/            → utilidades compartidas
+  types/          → interfaces y tipos del dominio
+  constants/      → factores de emisión y valores de negocio centralizados
+```
+
+Principios:
+
+- Separar **componentes**, **lógica de negocio**, **servicios** y **utilidades**.
+- No mezclar lógica de negocio con componentes de interfaz.
+- Responsabilidades bien definidas (una razón para cambiar por módulo).
+- Diseñar para que el MVP pueda evolucionar sin reescrituras masivas.
+
+### Pipeline de dominio EcoTrack
+
+Mantener **capas separadas** en el flujo principal:
+
+| Capa | Responsabilidad |
+|------|-----------------|
+| **Entrada** | Texto en lenguaje natural del usuario |
+| **Interpretación** | Parseo/clasificación de actividades (ej.: alimentación, transporte) |
+| **Cálculo** | Estimación de emisiones CO₂ con factores centralizados |
+| **Presentación** | Mostrar resultados al usuario |
+
+No acoplar estas capas entre sí más de lo necesario.
+
+---
+
+## Código limpio
+
+- Código claro, legible y mantenible.
+- Nombres descriptivos para variables, funciones y archivos.
+- Evitar duplicación; extraer solo cuando aporte claridad real.
+- Evitar complejidad innecesaria (YAGNI).
+- No introducir dependencias si no son necesarias.
+
+---
+
+## TypeScript
+
+- Tipado **estricto** (`strict: true` cuando aplique).
+- Evitar `any`; usar `unknown` y narrowing cuando el tipo sea incierto.
+- Definir interfaces y tipos en `types/` para entidades del dominio (actividad, emisión, entrada de usuario).
+- Validar datos recibidos (formularios, APIs, respuestas externas) con esquemas o guards explícitos.
+- No usar `@ts-ignore` ni casts forzados que oculten errores de tipado.
+
+---
+
+## Interfaz de usuario
+
+La UI de EcoTrack debe ser:
+
+- Simple, moderna, intuitiva y responsiva
+- Coherente visualmente (tipografía, espaciado, colores)
+- Centrada en la experiencia del usuario
+
+Requisito central: el usuario debe poder **introducir fácilmente** una descripción en lenguaje natural de sus actividades diarias (campo de texto prominente, feedback claro, flujo mínimo de pasos).
+
+Los componentes de UI **no deben contener** fórmulas de emisiones ni factores de negocio.
+
+---
+
+## Cálculos de emisiones (CO₂)
+
+- Mantener los cálculos **separados de la interfaz** (servicios o módulos dedicados).
+- Centralizar **fórmulas y factores de emisión** en `constants/` o un módulo equivalente, fácilmente modificables.
+- No hardcodear valores de negocio importantes dentro de componentes React.
+- Documentar brevemente la unidad y fuente de cada factor cuando se definan.
+
+Ejemplo de estructura esperada:
+
+```typescript
+// constants/emission-factors.ts
+export const EMISSION_FACTORS = {
+  transport: { bus: 0.089 /* kg CO₂/km */ },
+  food: { meat: 27 /* kg CO₂/kg */ },
+} as const;
+```
+
+---
+
+## Seguridad
+
+- Validar y sanitizar entradas del usuario en servidor y cliente.
+- No confiar en datos provenientes del cliente sin verificación.
+- No almacenar secretos, tokens ni claves API en el código fuente.
+- Usar variables de entorno (`.env.local`, nunca commitear `.env`).
+- No exponer claves API en el cliente (usar rutas API de Next.js como proxy si aplica).
+- Evitar vulnerabilidades comunes (XSS, inyección, CSRF según contexto).
+- No introducir dependencias o código inseguro sin justificación explícita.
+
+---
+
+## Calidad y pruebas
+
+Cuando sea apropiado:
+
+- Crear pruebas para **lógica importante** (interpretación de texto, cálculos de emisiones, validaciones).
+- Mantener pruebas simples, legibles y relevantes al comportamiento real.
+- Verificar que los cambios no rompan funcionalidades existentes.
+- Corregir errores de lint, tipos y tests antes de dar por terminada una funcionalidad.
+
+No añadir tests triviales que no aporten valor (ej.: assert de que un componente renderiza un `<div>`).
+
+---
+
+## Dependencias
+
+Antes de agregar una dependencia:
+
+1. Confirmar que **realmente es necesaria**.
+2. Preferir herramientas ya presentes en el proyecto.
+3. Evitar librerías para resolver problemas simples (ej.: una utilidad de 5 líneas no justifica un paquete).
+
+---
+
+## Comunicación del agente
+
+Al implementar una funcionalidad importante, incluir una explicación **breve** con:
+
+1. **Qué** se modificó
+2. **Por qué** se modificó
+3. **Qué archivos** fueron afectados
+4. **Cómo verificar** que funciona
+
+Evitar explicaciones excesivamente largas. Ser conciso y accionable.
+
+---
+
+## Restricciones de ejecución
+
+- Respetar el alcance de cada tarea; no expandir el scope sin que el desarrollador lo pida.
+- No crear archivos, carpetas o funcionalidades no relacionadas con la solicitud actual.
+- No modificar configuración de proyecto (eslint, tsconfig, package.json) salvo que sea necesario para la tarea o se solicite explícitamente.
+- Commits y PRs solo cuando el desarrollador lo pida.
