@@ -1,4 +1,8 @@
 import type { DetectedActivity, ParseResult } from "@/types/activity";
+import {
+  DISTANCE_MUST_BE_POSITIVE_MESSAGE,
+  validateDistanceKm,
+} from "@/lib/validate-distance";
 
 const MAX_INPUT_LENGTH = 2000;
 
@@ -10,33 +14,48 @@ function normalizeText(text: string): string {
   return text.trim().toLowerCase();
 }
 
-function extractBusDistance(text: string): number | null {
+function splitIntoSegments(text: string): string[] {
+  return text
+    .split(/[,;]|\s+y\s+/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+function extractBusDistance(segment: string): {
+  distanceKm: number | null;
+  hasInvalidDistance: boolean;
+} {
   const patterns = [
-    /(\d+(?:[.,]\d+)?)\s*(?:km|kilómetros|kilometros|kilómetro|kilometro)/i,
-    /(?:viaj[eé]|recorr[ií]|fui)\s*(?:\w+\s+){0,6}?(\d+(?:[.,]\d+)?)\s*(?:km|kilómetros|kilometros)?/i,
+    /(-?\d+(?:[.,]\d+)?)\s*(?:km|kilómetros|kilometros|kilómetro|kilometro)/i,
+    /(?:viaj[eé]|regres[eé]|volv[ií]|recorr[ií]|fui)\s*(?:\w+\s+){0,6}?(-?\d+(?:[.,]\d+)?)\s*(?:km|kilómetros|kilometros)?/i,
   ];
 
   for (const pattern of patterns) {
-    const match = text.match(pattern);
+    const match = segment.match(pattern);
     if (match?.[1]) {
-      const distance = parseFloat(match[1].replace(",", "."));
-      if (!Number.isNaN(distance) && distance > 0) {
-        return distance;
+      const validation = validateDistanceKm(match[1]);
+      if (validation.status === "valid") {
+        return { distanceKm: validation.distanceKm, hasInvalidDistance: false };
+      }
+      if (validation.status === "invalid") {
+        return { distanceKm: null, hasInvalidDistance: true };
       }
     }
   }
 
-  return null;
+  return { distanceKm: null, hasInvalidDistance: false };
 }
 
-function mentionsBus(text: string): boolean {
-  return /\b(bus|autobús|autobus|colectivo)\b/i.test(text);
+function mentionsBus(segment: string): boolean {
+  return /\b(bus|autobús|autobus|colectivo)\b/i.test(segment);
 }
 
-function mentionsMeat(text: string): boolean {
-  return /\b(com[ií]|consum[ií]|comer)\b.*\b(carne|res|pollo|cerdo|vacuno)\b|\b(carne)\b/i.test(
-    text,
-  );
+const EATING_VERB_PATTERN =
+  /(?:desayun(?:e|é)|almorc(?:e|é)|cen(?:e|é)|com(?:i|í)|consum(?:i|í)|comer)(?=\s|$|[,.])/i;
+
+function mentionsMeat(segment: string): boolean {
+  const hasMeat = /\b(carne|res|pollo|cerdo|vacuno)\b/i.test(segment);
+  return hasMeat && EATING_VERB_PATTERN.test(segment);
 }
 
 function extractMeatQuantityKg(text: string): number | null {
@@ -75,33 +94,48 @@ export class LocalActivityParser implements ActivityParser {
       };
     }
 
-    if (mentionsBus(text)) {
-      const distanceKm = extractBusDistance(text);
-      if (distanceKm !== null) {
-        activities.push({
-          category: "transport",
-          mode: "bus",
-          distanceKm,
-          label: `Viaje en bus (${distanceKm} km)`,
-        });
-      } else {
-        warnings.push(
-          "Se detectó transporte en bus, pero no se encontró una distancia válida en km.",
-        );
-      }
-    }
+    const segments = splitIntoSegments(text);
+    let busCount = 0;
+    let meatCount = 0;
 
-    if (mentionsMeat(text)) {
-      const estimatedKg = extractMeatQuantityKg(text);
-      activities.push({
-        category: "food",
-        type: "meat",
-        estimatedKg: estimatedKg ?? 0.2,
-        label:
-          estimatedKg !== null
-            ? `Consumo de carne (${estimatedKg} kg)`
-            : "Consumo de carne (porción estimada)",
-      });
+    for (const segment of segments) {
+      if (mentionsBus(segment)) {
+        const { distanceKm, hasInvalidDistance } = extractBusDistance(segment);
+        if (distanceKm !== null) {
+          busCount += 1;
+          activities.push({
+            category: "transport",
+            mode: "bus",
+            distanceKm,
+            label:
+              busCount > 1
+                ? `Viaje en bus ${busCount} (${distanceKm} km)`
+                : `Viaje en bus (${distanceKm} km)`,
+          });
+        } else if (hasInvalidDistance) {
+          warnings.push(DISTANCE_MUST_BE_POSITIVE_MESSAGE);
+        } else {
+          warnings.push(
+            `Se detectó transporte en bus en "${segment}", pero no se encontró una distancia válida en km.`,
+          );
+        }
+      }
+
+      if (mentionsMeat(segment)) {
+        meatCount += 1;
+        const estimatedKg = extractMeatQuantityKg(segment);
+        activities.push({
+          category: "food",
+          type: "meat",
+          estimatedKg: estimatedKg ?? 0.2,
+          label:
+            estimatedKg !== null
+              ? `Consumo de carne (${estimatedKg} kg)`
+              : meatCount > 1
+                ? `Consumo de carne ${meatCount} (porción estimada)`
+                : "Consumo de carne (porción estimada)",
+        });
+      }
     }
 
     if (activities.length === 0 && warnings.length === 0) {
